@@ -1,0 +1,402 @@
+/*
+ For this sketch, you'll need:
+ Mega 2560 microcontroller x 1
+ LCD x 1
+ 10k potentiometer x 1
+ push botton x 2
+ 10k resistors x 2
+ jumper wires
+
+ diagram:
+ LCD- using the 16 pins from left to right
+      1=GND
+      2=5V
+      3=potentiometer middle pin
+      4=1/TX0
+      5=GND
+      6=2
+      7=N/A
+      8=N/A
+      9=N/A
+      10=N/A
+      11=4
+      12=5
+      13=6
+      14=7
+      15=5V
+      16=GND
+  
+  Push Buttons- using a green button on the left and red button on the right
+      green= one leg connected to GND by 10k resistor and pin 34; other leg to 5V
+      red= one leg connected to GND by 10k resistor and pin 22; other leg to 5V
+
+  Potentiometer-
+      left=GND
+      middle=LCD 3
+      right=5V
+      
+ */
+#include <LiquidCrystal.h>
+
+unsigned long prevTime=0;//setting up for time events(buttons)
+unsigned long prevTime1=0;//setting up for time events(resetting attack mode)
+unsigned long prevTime2=0;//setting up for time events(killed sequence)
+unsigned long prevTime3=0;//
+unsigned long survivalTime=0;//setting up survival time time stamp
+const unsigned long ufoMoveTrigger=800;//sets time used by ufo to change course towards llama
+const unsigned long ufoAttackTrigger=0;//sets time used by ufo to switch to attack mode
+unsigned long ufoAttackMode=0;//starts ufo attack animations. 0 for off, 1 for on
+unsigned long ufoAttackLength=6000;//determines how long to attack llama for
+unsigned long ufoAttackDelay=2000;//determines how long ufo needs to wait before shooting
+unsigned long ufoKillLength=700;//determines how long ufo needs to shoot llama in order to kill it
+unsigned long rTime=0;//setting up llama direction stance
+unsigned long gTime=0;//^
+
+const int rButton=22; //red button
+const int gButton=34; //green button
+byte rState;
+byte rLastState=LOW;//setting up red button state
+byte gState;
+byte gLastState=LOW;//setting up green button state
+byte llamaX=0;//setting up spawn for llama x-axis
+byte ufoX=15;//setting up spawn for ufo
+byte beamX=0;//used to track when ufo hits llama
+byte beamsShot=0;//used to track how many beams where shot during the game
+LiquidCrystal lcd(1,2,4,5,6,7);//LCD pins
+//animations
+byte llamaR[] = { //0
+  B00000,
+  B00000,
+  B00000,
+  B00110,
+  B00111,
+  B11110,
+  B11110,
+  B10100
+};
+byte llamaL[] = { //1
+  B00000,
+  B00000,
+  B00000,
+  B01100,
+  B11100,
+  B01111,
+  B01111,
+  B00101
+};
+byte ufoFloat[] = { //5
+  B00000,
+  B00000, 
+  B00000,
+  B00000,
+  B00000,
+  B00100,
+  B11111,
+  B01110
+};
+byte ufoAttackBase1[] = { //6
+  B00000,
+  B00100,
+  B00110,
+  B01100,
+  B00111,
+  B01110,
+  B01110,
+  B11111
+};
+byte ufoAttackBase2[] = { //7
+  B01110,
+  B01111,
+  B01111,
+  B01111,
+  B11111,
+  B11111,
+  B11111,
+  B11111
+};
+
+  
+void setup() {
+ pinMode(rButton,INPUT);
+ pinMode(gButton,INPUT);
+ lcd.begin(16,2);
+ lcd.createChar(0, llamaR);
+ lcd.createChar(1, llamaL);
+ //lcd.createChar(2, ); //reserved for llama functions
+ //lcd.createChar(3, ); //reserved for llama functions
+ //lcd.createChar(4, ); //reserved for misc
+ lcd.createChar(5, ufoFloat);
+ lcd.createChar(6, ufoAttackBase1);
+ lcd.createChar(7, ufoAttackBase2);
+ 
+//intro
+ lcd.setCursor(3,0);
+ lcd.print("Llama Dash");
+ lcd.setCursor(1,1);
+ lcd.print("-UFO Invasion-");
+ delay(1500);
+ lcd.noDisplay();
+ delay(500);
+ lcd.display();
+ lcd.setCursor(3,0);
+ lcd.print("Llama Dash");
+ lcd.setCursor(1,1);
+ lcd.print("-UFO Invasion-");
+ delay(1500);
+ lcd.clear();
+ delay(500);
+ 
+
+ 
+ //initial spawns
+ lcd.setCursor(llamaX,1);//llama spawner
+ lcd.write(byte(0));
+ lcd.setCursor(ufoX,0);//ufo spawner
+ lcd.write(byte(5));  
+ ufoAttackMode=0;
+}
+
+void loop() {
+  unsigned long currentTime=millis();//setting up timed events/resets current time
+  unsigned long currentTime1=millis()-4000;//setting up timer on top left. miuns 4 secs due to intro being 4 secs long
+
+///////////////SCREEN VALUES///////////////////////////////////////////////////////////////////////
+  if(ufoX<=12 && (ufoAttackMode==0 || ufoAttackMode==1)){//function to erase values when ufo is away from right edge
+  lcd.setCursor(14,0);//Shows a value on top right of screen.
+  lcd.print(beamsShot);
+  }
+  if(ufoX>=3 && (ufoAttackMode==0 || ufoAttackMode==1)){//function to erase values when ufo is away from left edge
+  lcd.setCursor(0,0);//Shows a value on top left of screen.
+  lcd.print(currentTime1/1000);
+  }
+
+
+  
+  //ufoAttackMode Timer\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  
+  if (ufoAttackMode==1 && currentTime-prevTime1>=ufoAttackLength){//after the attack length, turn attack mode off
+    ufoAttackMode=0;//disables attack mode
+    prevTime1=currentTime;//resets time   
+  }
+
+  
+  
+  //gameover sequence\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  
+  if(ufoAttackMode==2){
+     lcd.clear();//deletes everything on screen
+     ufoAttackMode=3;//gameover screen
+     survivalTime=currentTime;//writes time stamp
+  }
+  if(ufoAttackMode==3){//gameover screen
+     lcd.setCursor(4,0);
+     lcd.print("Gameover");
+     delay(800);
+     lcd.clear();
+     delay(800);
+     lcd.setCursor(0,0);
+     lcd.print("You survived for");
+     delay(800);
+     lcd.clear();
+     delay(800);
+     lcd.setCursor(4,0);
+     lcd.print(survivalTime/1000);
+     lcd.setCursor(8,0);
+     lcd.print("secs");
+     lcd.setCursor(4,1);
+     lcd.print(beamsShot);
+     lcd.setCursor(8,1);
+     lcd.print("shots");
+     delay(1200);
+     lcd.clear();
+     delay(800);
+      if(survivalTime<=20999){//llama survived less than 20 secs
+        lcd.setCursor(4,0);
+        lcd.print("Loser..");
+        delay(800);
+        lcd.clear();
+        delay(800);
+      } else if (20999<survivalTime<=40999){//llama survived less than 40 secs
+        lcd.setCursor(2,0);
+        lcd.print("Not bad, eh");
+        delay(800);
+        lcd.clear();
+        delay(800);
+      } else if (40999<survivalTime<=60999) {//llama survived less than 60 secs
+        lcd.setCursor(2,0);
+        lcd.print("those moves..");
+        delay(800);
+        lcd.clear();
+        delay(800);
+      } else if(60999<survivalTime){//llama survived over 60 secs
+        lcd.setCursor(2,0);
+        lcd.print("Llama God");
+        delay(800);
+        lcd.clear();
+        delay(800);
+      }
+  }
+
+
+//ufoAttackMode=1, attack mode\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+
+if(ufoAttackMode==1){//if attack mode is on, ufo attacks llama for predetermined amount of time
+  if(ufoX==llamaX){//if ufo finds llama and
+    if(ufoX==llamaX && currentTime-prevTime2>=ufoKillLength){//stays over llama for some time,
+      ufoAttackMode=2;//activate gameover sequence
+    }
+  } else {
+    ufoAttackMode=1;//keep attacking
+  }
+    //llama behavior\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    //llama button controls
+    int rState=digitalRead(rButton);//sets up states
+    int gState=digitalRead(gButton);
+    if( rState==HIGH && rState != rLastState){ //if red button is pressed, llama moves right
+      if(llamaX<15){//prevents offscreen movement
+        llamaX += 1;//move right one
+        lcd.clear();
+        lcd.setCursor(llamaX,1);//llama spawner
+        lcd.write(byte(0));//llama right sprite
+        rTime=currentTime;//writes new time stamp on press
+      } else{
+        llamaX += 0;//dont move
+      }
+    }
+    rLastState=rState;//save new r state
+    if( gState==HIGH && gState != gLastState){ //if green button is pressed, llama moves left
+      if(0<llamaX){//prevents offscreen movement
+        llamaX -= 1;//move left one
+        lcd.clear();
+        lcd.setCursor(llamaX,1);//llama spawner
+        lcd.write(byte(1));//llama left sprite
+        gTime=currentTime;//writes new time stamp on press
+      } else{
+        llamaX += 0;//dont move
+      }
+    }
+    gLastState=gState;//save new g state
+    //llama spawner  
+    if(rTime>=gTime){//if red button was pressed last,
+      lcd.setCursor(llamaX,1);//llama spawner
+      lcd.write(byte(0));//llama look right sprite
+    }
+    if(rTime<gTime){//if green button was pressed last,
+      lcd.setCursor(llamaX,1);//llama spawner
+      lcd.write(byte(1));//llama look left sprite
+    }
+    //end of "llama behavior"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    //ufo searching behavior\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    if(ufoX>llamaX && currentTime-prevTime>=ufoMoveTrigger){ //if ufo is right of llama and it waited the trigger time,
+      ufoX -= 1; //move right
+      lcd.clear();
+      lcd.setCursor(ufoX,0);//ufo spawner
+      lcd.write(byte(5));
+      lcd.setCursor(ufoX,1);//beam spawner
+      lcd.write(byte(6));
+      prevTime=currentTime;//resets prevtime
+    } else {
+      ufoX += 0;//dont move and move to next condition
+    }
+    if(ufoX<llamaX && currentTime-prevTime>=ufoMoveTrigger){ //if ufo is left of llama and it waited the trigger time,
+      ufoX += 1; //move right
+      lcd.clear();
+      lcd.setCursor(ufoX,0);//ufo spawner
+      lcd.write(byte(5));
+      lcd.setCursor(ufoX,1);//beam spawner
+      lcd.write(byte(6));
+      prevTime=currentTime;//resets prevtime
+    } else {
+      ufoX += 0;//dont move and move to next condition
+    }
+    //ufo spawner
+    lcd.setCursor(ufoX,0);//ufo spawner
+    lcd.write(byte(5));
+    lcd.setCursor(ufoX,1);//beam spawner
+    lcd.write(byte(6));
+    //end of "ufo searching behavior"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+    
+    if(ufoAttackMode==0){//erases search mode off screen when attack mode is deactivated
+      lcd.clear();//^
+    }
+           
+           
+} else if(ufoAttackMode==0){//attack mode is off, everything behave normally!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  //llama behavior\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  //llama button controls
+  int rState=digitalRead(rButton);//sets up states
+  int gState=digitalRead(gButton);
+  if( rState==HIGH && rState != rLastState){ //if red button is pressed, llama moves right
+    if(llamaX<15){//prevents offscreen movement
+      llamaX += 1;//move right one
+      lcd.clear();
+      lcd.setCursor(llamaX,1);//llama spawner
+      lcd.write(byte(0));//llama right sprite
+      rTime=currentTime;//writes new time stamp on press
+    } else{
+      llamaX += 0;//dont move
+    }
+  }
+  rLastState=rState;//save new r state
+  if( gState==HIGH && gState != gLastState){ //if green button is pressed, llama moves left
+    if(0<llamaX){//prevents offscreen movement
+      llamaX -= 1;//move left one
+      lcd.clear();
+      lcd.setCursor(llamaX,1);//llama spawner
+      lcd.write(byte(1));//llama left sprite
+      gTime=currentTime;//writes new time stamp on press
+    } else{
+      llamaX += 0;//dont move
+    }
+  }
+  gLastState=gState;//save new g state
+  //llama spawner  
+  if(rTime>=gTime){//if red button was pressed last,
+    lcd.setCursor(llamaX,1);//llama spawner
+    lcd.write(byte(0));//llama look right sprite
+  }
+  if(rTime<gTime){//if green button was pressed last,
+    lcd.setCursor(llamaX,1);//llama spawner
+    lcd.write(byte(1));//llama look left sprite
+  }
+  //end of "llama behavior"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  //ufo searching behavior\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  if(ufoX>llamaX && currentTime-prevTime>=ufoMoveTrigger){ //if ufo is right of llama and it waited the trigger time,
+    ufoX -= 1; //move right
+    lcd.clear();
+    lcd.setCursor(ufoX,0);//ufo spawner
+    lcd.write(byte(5));
+    prevTime=currentTime;//resets prevtime
+  } else {
+    ufoX += 0;//dont move and move to next condition
+  }
+  if(ufoX<llamaX && currentTime-prevTime>=ufoMoveTrigger){ //if ufo is left of llama and it waited the trigger time,
+    ufoX += 1; //move right
+    lcd.clear();
+    lcd.setCursor(ufoX,0);//ufo spawner
+    lcd.write(byte(5));
+    prevTime=currentTime;//resets prevtime
+  } else {
+    ufoX += 0;//dont move and move to next condition
+  }
+  //ufo spawner
+  lcd.setCursor(ufoX,0);//ufo spawner
+  lcd.write(byte(5));
+  //end of "ufo searching behavior"\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  //board wipe if attackmode changed to 1\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+      
+  if(ufoAttackMode==1){
+    lcd.clear();//erases search mode off screen when attack mode is activated
+  }
+  //ufo attack mode trigger. Check if ufo found llama\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+  if(ufoX==llamaX && currentTime-prevTime>=ufoAttackTrigger){//if ufo is over llama and ufo waited the trigger time,
+    if(currentTime-prevTime2>=ufoAttackDelay){//wait delay before shooting
+      ufoAttackMode=1;//activate attack mode
+      beamsShot += 1;//add one to beam counter
+      prevTime2=currentTime;
+    } else {
+      ufoAttackMode=0;
+    }
+  }
+}
+}
