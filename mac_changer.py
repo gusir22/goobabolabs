@@ -68,7 +68,7 @@ def change_mac(interface, requested_mac):
     #runs linux terminal commands to change MAC
     subprocess.call(['ifconfig', interface, 'down'])
     subprocess.call(['ifconfig', interface, 'hw', 'ether', requested_mac])
-    subprocess.call(['ifconfig', 'up'])
+    subprocess.call(['ifconfig', interface, 'up'])
 
     #stores new MAC
     new_mac = find_mac(interface)
